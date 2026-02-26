@@ -2,9 +2,11 @@ services:
   - type: web
     name: ericdigi-bot
     env: node
-    buildCommand: npm install && npm run build
-    startCommand: npm run start
+    buildCommand: npm install
+    startCommand: node index.js
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PORT
+        value: "3000"
     plan: free

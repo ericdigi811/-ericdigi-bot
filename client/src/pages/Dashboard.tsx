@@ -1,98 +1,75 @@
 import { Header } from "@/components/layout/Header";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { ContactsTable } from "@/components/dashboard/ContactsTable";
-import { useStats, useContacts } from "@/hooks/use-dashboard";
-import { Users, Send, Percent, RefreshCw, AlertTriangle } from "lucide-react";
-import { format, parseISO } from "date-fns";
-import { fr } from "date-fns/locale";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { useContacts, useStats, useUpdateStatus, useWhatsappQr } from "@/hooks/use-dashboard";
+import { Users, Send, Percent, RefreshCw } from "lucide-react";
+import { useMemo, useState } from "react";
+
+const FILTERS = ['tous', 'nouveau', 'contacté', 'relancé', 'chaud', 'converti', 'froid'];
 
 export default function Dashboard() {
-  const { data: stats, isLoading: isLoadingStats, isError: isStatsError } = useStats();
-  const { data: contacts, isLoading: isLoadingContacts } = useContacts();
+  const { data: stats } = useStats();
+  const { data: contacts = [] } = useContacts();
+  const { data: qrData } = useWhatsappQr();
+  const updateStatus = useUpdateStatus();
+  const [filter, setFilter] = useState('tous');
+  const [form, setForm] = useState({ firstName: '', phone: '', email: '', source: 'Manuel', status: 'nouveau' });
 
-  const formatSyncDate = (dateString?: string) => {
-    if (!dateString) return "Aucune synchronisation";
-    try {
-      return format(parseISO(dateString), "dd MMM à HH:mm", { locale: fr });
-    } catch {
-      return dateString;
-    }
+  const filtered = useMemo(() => {
+    if (filter === 'tous') return contacts;
+    return contacts.filter((c) => c.status.toLowerCase() === filter);
+  }, [contacts, filter]);
+
+  const createContact = async () => {
+    await fetch('/api/contacts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(form),
+    });
+    location.reload();
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/50 pb-12">
+    <div className="min-h-screen bg-slate-950 text-slate-100 pb-10">
       <Header status={stats?.botStatus} />
-      
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-        
-        {isStatsError && (
-          <Alert variant="destructive" className="bg-rose-50 border-rose-200 text-rose-800">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>Erreur de connexion</AlertTitle>
-            <AlertDescription>
-              Impossible de récupérer les statistiques en temps réel. Le serveur est peut-être inactif.
-            </AlertDescription>
-          </Alert>
-        )}
+      <main className="max-w-7xl mx-auto px-4 pt-8 space-y-6">
+        <h1 className="text-3xl font-bold text-blue-300">Tableau de bord EricDigi</h1>
 
-        <div className="flex flex-col gap-2">
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
-            Vue d'ensemble
-          </h1>
-          <p className="text-slate-500 font-medium">
-            Gérez vos leads et surveillez l'activité de votre bot WhatsApp.
-          </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard title="Total contacts" value={stats?.totalContacts ?? 0} icon={<Users className="w-6 h-6" />} isLoading={false} description="Base réelle" />
+          <StatCard title="Messages envoyés" value={stats?.messagesSentToday ?? 0} icon={<Send className="w-6 h-6" />} isLoading={false} description="Aujourd'hui" />
+          <StatCard title="Taux conversion" value={`${stats?.conversionRate ?? 0}%`} icon={<Percent className="w-6 h-6" />} isLoading={false} description="Leads chauds/convertis" />
+          <StatCard title="Dernière sync HubSpot" value={stats?.lastSync ? new Date(stats.lastSync).toLocaleString('fr-FR') : '-'} icon={<RefreshCw className="w-6 h-6" />} isLoading={false} description="Toutes les heures" />
         </div>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-          <StatCard
-            title="Total Contacts"
-            value={stats?.totalContacts ?? 0}
-            icon={<Users className="w-6 h-6" />}
-            isLoading={isLoadingStats}
-            trend={{ value: 12, isPositive: true }}
-            description="Leads synchronisés dans le système"
-          />
-          <StatCard
-            title="Messages Envoyés"
-            value={stats?.messagesSentToday ?? 0}
-            icon={<Send className="w-6 h-6" />}
-            isLoading={isLoadingStats}
-            description="Aujourd'hui, interactions proactives"
-          />
-          <StatCard
-            title="Taux de Conversion"
-            value={`${stats?.conversionRate ?? 0}%`}
-            icon={<Percent className="w-6 h-6" />}
-            isLoading={isLoadingStats}
-            trend={{ value: 2.4, isPositive: true }}
-            description="Leads ayant répondu positivement"
-          />
-          <StatCard
-            title="Dernière Sync Bitrix24"
-            value={isLoadingStats ? "" : formatSyncDate(stats?.lastSync).split(" à ")[0]}
-            icon={<RefreshCw className="w-6 h-6" />}
-            isLoading={isLoadingStats}
-            description={isLoadingStats ? "" : `à ${formatSyncDate(stats?.lastSync).split(" à ")[1] || ""}`}
-          />
-        </div>
+        <section className="rounded-xl border border-slate-800 p-4 bg-slate-900">
+          <h2 className="font-semibold mb-3">QR code WhatsApp</h2>
+          {qrData?.qr ? (
+            <img alt="QR WhatsApp" src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(qrData.qr)}`} />
+          ) : (
+            <p className="text-sm text-slate-400">QR indisponible pour le moment.</p>
+          )}
+        </section>
 
-        {/* Data Table Section */}
-        <div className="space-y-4 pt-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold text-slate-900">
-              Contacts Récents
-            </h2>
-            <div className="text-sm font-medium text-slate-500 bg-white px-3 py-1.5 rounded-md border shadow-sm">
-              Mise à jour en temps réel
-            </div>
+        <section className="rounded-xl border border-slate-800 p-4 bg-slate-900 space-y-3">
+          <h2 className="font-semibold">Ajout manuel + Import CSV</h2>
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+            <input className="bg-slate-800 p-2 rounded" placeholder="Prénom" value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} />
+            <input className="bg-slate-800 p-2 rounded" placeholder="Numéro" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+            <input className="bg-slate-800 p-2 rounded" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            <button className="bg-blue-700 rounded p-2" onClick={createContact}>Ajouter</button>
+            <button className="bg-slate-700 rounded p-2" onClick={() => fetch('/api/contacts/import-csv', { method: 'POST' })}>Import CSV</button>
           </div>
-          
-          <ContactsTable contacts={contacts || []} isLoading={isLoadingContacts} />
-        </div>
+        </section>
 
+        <section className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            {FILTERS.map((f) => (
+              <button key={f} className={`px-3 py-1 rounded ${filter === f ? 'bg-blue-700' : 'bg-slate-800'}`} onClick={() => setFilter(f)}>{f}</button>
+            ))}
+          </div>
+          <ContactsTable contacts={filtered} onConvert={(id) => updateStatus.mutate({ id, status: 'converti' })} />
+        </section>
       </main>
     </div>
   );

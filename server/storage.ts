@@ -27,7 +27,7 @@ export class JsonStorage implements IStorage {
     try {
       await fs.access(CONTACTS_FILE);
     } catch {
-      await fs.writeFile(CONTACTS_FILE, JSON.stringify([]));
+      await fs.writeFile(CONTACTS_FILE, JSON.stringify([], null, 2));
     }
   }
 
@@ -68,6 +68,8 @@ export class JsonStorage implements IStorage {
   async getStats(): Promise<Stats> {
     const contacts = await this.getContacts();
     this.stats.totalContacts = contacts.length;
+    const converted = contacts.filter(c => c.status === 'converti' || c.status === 'chaud').length;
+    this.stats.conversionRate = contacts.length ? Number(((converted / contacts.length) * 100).toFixed(1)) : 0;
     return this.stats;
   }
 

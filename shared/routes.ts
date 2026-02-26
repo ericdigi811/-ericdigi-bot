@@ -35,7 +35,7 @@ export const api = {
     create: {
       method: "POST" as const,
       path: "/api/contacts" as const,
-      input: contactSchema,
+      input: contactSchema.omit({ id: true }),
       responses: {
         201: contactSchema,
         400: errorSchemas.validation,

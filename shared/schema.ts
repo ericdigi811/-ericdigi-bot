@@ -5,9 +5,15 @@ export const contactSchema = z.object({
   firstName: z.string().optional(),
   lastName: z.string().optional(),
   phone: z.string(),
-  source: z.string(), // "Facebook", "Instagram", "WhatsApp", "Web", etc.
-  status: z.string(), // "nouveau", "contacté", "relancé", "répondu", etc.
+  email: z.string().optional(),
+  source: z.string(),
+  status: z.string(),
   lastActionDate: z.string().optional(),
+  problem: z.string().optional(),
+  sector: z.string().optional(),
+  plan: z.string().optional(),
+  historique_conversation: z.array(z.string()).optional(),
+  conversationStep: z.number().optional(),
 });
 
 export type Contact = z.infer<typeof contactSchema>;

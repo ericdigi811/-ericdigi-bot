@@ -4,59 +4,79 @@ import { storage } from "./storage";
 import { api } from "../shared/routes";
 import { z } from "zod";
 import cron from "node-cron";
-import { syncFromBitrix } from "./bitrix";
-import { startWhatsAppBot, sendMessageToContact } from "./bot";
+import { getNewLeadsFromHubspot, notifyHubspotStatus, syncFromBitrix } from "./bitrix";
+import { getLatestQrCode, startWhatsAppBot, sendMessageToContact } from "./bot";
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-
-  // Démarrer le bot WhatsApp en tâche de fond
   startWhatsAppBot().catch(console.error);
 
-  // CRON : Toutes les heures pour synchroniser Bitrix24
   cron.schedule('0 * * * *', async () => {
-    console.log('Exécution de la synchronisation horaire Bitrix24...');
     await syncFromBitrix();
   });
 
-  // CRON : Chaque matin à 9h pour contacter les nouveaux leads
   cron.schedule('0 9 * * *', async () => {
-    console.log('Exécution des contacts 9h...');
-    const contacts = await storage.getContacts();
-    const newLeads = contacts.filter(c => c.status === 'nouveau' && c.source !== 'WhatsApp');
-    
-    for (const lead of newLeads) {
-      await sendMessageToContact(lead.phone, `Bonjour ${lead.firstName || ''} 👋 Je suis Eric de EricDigi. Nous aidons les business en Afrique à ne plus perdre de clients grâce à un système complet en 5 jours. Intéressé ? Répondez OUI pour en savoir plus.`);
-      await storage.updateContact(lead.id, { status: "contacté", lastActionDate: new Date().toISOString() });
+    const leads = await getNewLeadsFromHubspot();
+    for (const lead of leads) {
+      const phone = lead.properties.phone;
+      if (!phone) continue;
+      const firstName = lead.properties.firstname || '';
+      const sector = lead.properties.sector || 'votre activité';
+      let contact = await storage.getContactByPhone(phone);
+      if (!contact) {
+        contact = await storage.createContact({
+          id: `hub_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`,
+          firstName,
+          lastName: lead.properties.lastname || undefined,
+          email: lead.properties.email || undefined,
+          phone,
+          source: 'HubSpot',
+          status: 'nouveau',
+          sector,
+          historique_conversation: [],
+          conversationStep: 0,
+          lastActionDate: new Date().toISOString(),
+        });
+      }
+
+      await sendMessageToContact(phone, `Bonjour ${firstName} 👋 J'espère que vous allez bien. J'ai vu que vous développez ${sector}. Quel est votre principal défi en ce moment pour mieux suivre vos prospects et convertir plus de clients ?`);
+      const updated = await storage.updateContact(contact.id, { status: 'contacté', lastActionDate: new Date().toISOString() });
+      await notifyHubspotStatus(updated, 'contacté');
     }
   });
 
-  // CRON : Chaque jour à 10h pour les relances
   cron.schedule('0 10 * * *', async () => {
-    console.log('Exécution des relances 10h...');
     const contacts = await storage.getContacts();
     const now = Date.now();
-    
+
     for (const lead of contacts) {
       if (lead.status === 'contacté' && lead.lastActionDate) {
-        const lastAction = new Date(lead.lastActionDate).getTime();
-        const diffHours = (now - lastAction) / (1000 * 60 * 60);
+        const diffHours = (now - new Date(lead.lastActionDate).getTime()) / (1000 * 60 * 60);
         if (diffHours >= 48) {
-          await sendMessageToContact(lead.phone, `Bonjour ${lead.firstName || ''} 🙏 Je voulais juste vérifier si vous avez des questions sur nos services EricDigi. Je suis disponible pour vous aider.`);
-          await storage.updateContact(lead.id, { status: "relancé", lastActionDate: new Date().toISOString() });
+          await sendMessageToContact(lead.phone, `Bonjour ${lead.firstName || ''}, je voulais juste prendre de vos nouvelles. Avez-vous eu le temps de réfléchir à ce dont on avait parlé ? Je reste disponible si vous avez des questions 🙏`);
+          const updated = await storage.updateContact(lead.id, { status: 'relancé', lastActionDate: new Date().toISOString() });
+          await notifyHubspotStatus(updated, 'relancé');
+        }
+      }
+
+      if (lead.status === 'relancé' && lead.lastActionDate) {
+        const diffDays = (now - new Date(lead.lastActionDate).getTime()) / (1000 * 60 * 60 * 24);
+        if (diffDays >= 7) {
+          const updated = await storage.updateContact(lead.id, { status: 'froid', lastActionDate: new Date().toISOString() });
+          await notifyHubspotStatus(updated, 'froid');
         }
       }
     }
   });
 
-  app.get(api.stats.get.path, async (req, res) => {
+  app.get(api.stats.get.path, async (_req, res) => {
     const stats = await storage.getStats();
     res.json(stats);
   });
 
-  app.get(api.contacts.list.path, async (req, res) => {
+  app.get(api.contacts.list.path, async (_req, res) => {
     const contacts = await storage.getContacts();
     res.json(contacts);
   });
@@ -67,8 +87,11 @@ export async function registerRoutes(
       const contact = await storage.createContact({
         ...input,
         id: `local_${Date.now()}`,
-        lastActionDate: new Date().toISOString()
+        lastActionDate: new Date().toISOString(),
+        historique_conversation: input.historique_conversation || [],
+        conversationStep: input.conversationStep || 0,
       });
+      await notifyHubspotStatus(contact, contact.status);
       res.status(201).json(contact);
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -81,12 +104,28 @@ export async function registerRoutes(
     }
   });
 
+  app.patch('/api/contacts/:id/status', async (req, res) => {
+    const schema = z.object({ status: z.string() });
+    const payload = schema.parse(req.body);
+    const contact = await storage.updateContact(req.params.id, { status: payload.status, lastActionDate: new Date().toISOString() });
+    await notifyHubspotStatus(contact, payload.status);
+    res.json(contact);
+  });
+
+  app.post('/api/contacts/import-csv', async (_req, res) => {
+    res.status(501).json({ message: 'Import CSV à brancher selon votre flux source.' });
+  });
+
+  app.get('/api/whatsapp/qr', async (_req, res) => {
+    res.json({ qr: getLatestQrCode() });
+  });
+
   app.post(api.dust.handle.path, async (req, res) => {
     try {
       const input = api.dust.handle.input.parse(req.body);
       const contacts = await storage.getContacts();
       const stats = await storage.getStats();
-      
+
       res.json({
         message: "Réponse du système EricDigi",
         data: { contacts, stats },
@@ -103,8 +142,7 @@ export async function registerRoutes(
     }
   });
 
-  // Ping d'UptimeRobot
-  app.get('/ping', (req, res) => {
+  app.get('/ping', (_req, res) => {
     res.send("EricDigi Bot actif 🟢");
   });
 
