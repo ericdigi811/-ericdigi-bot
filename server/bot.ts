@@ -53,6 +53,19 @@ export function getLatestQrCode() {
   return latestQr;
 }
 
+export async function requestWhatsAppQr() {
+  latestQr = '';
+  await storage.updateStats({ botStatus: 'connecting' });
+  try {
+    if (sock?.ws?.isOpen) {
+      sock.ws.close();
+    }
+  } catch (error) {
+    console.error('Erreur fermeture session WhatsApp:', error);
+  }
+  await startWhatsAppBot();
+}
+
 export async function startWhatsAppBot() {
   const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
 

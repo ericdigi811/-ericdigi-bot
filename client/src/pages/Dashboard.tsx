@@ -1,8 +1,8 @@
 import { Header } from "@/components/layout/Header";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { ContactsTable } from "@/components/dashboard/ContactsTable";
-import { useContacts, useStats, useUpdateStatus, useWhatsappQr } from "@/hooks/use-dashboard";
-import { Users, Send, Percent, RefreshCw } from "lucide-react";
+import { useContacts, useStartWhatsappConnection, useStats, useUpdateStatus, useWhatsappQr } from "@/hooks/use-dashboard";
+import { Users, Send, Percent, RefreshCw, QrCode } from "lucide-react";
 import { useMemo, useState } from "react";
 
 const FILTERS = ['tous', 'nouveau', 'contacté', 'relancé', 'chaud', 'converti', 'froid'];
@@ -11,6 +11,7 @@ export default function Dashboard() {
   const { data: stats } = useStats();
   const { data: contacts = [] } = useContacts();
   const { data: qrData } = useWhatsappQr();
+  const startWhatsapp = useStartWhatsappConnection();
   const updateStatus = useUpdateStatus();
   const [filter, setFilter] = useState('tous');
   const [form, setForm] = useState({ firstName: '', phone: '', email: '', source: 'Manuel', status: 'nouveau' });
@@ -42,12 +43,25 @@ export default function Dashboard() {
           <StatCard title="Dernière sync HubSpot" value={stats?.lastSync ? new Date(stats.lastSync).toLocaleString('fr-FR') : '-'} icon={<RefreshCw className="w-6 h-6" />} isLoading={false} description="Toutes les heures" />
         </div>
 
-        <section className="rounded-xl border border-slate-800 p-4 bg-slate-900">
-          <h2 className="font-semibold mb-3">QR code WhatsApp</h2>
+        <section className="rounded-xl border border-slate-800 p-4 bg-slate-900 space-y-4">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <h2 className="font-semibold flex items-center gap-2"><QrCode className="w-4 h-4" /> Connexion WhatsApp</h2>
+            <button
+              className="bg-emerald-700 hover:bg-emerald-600 rounded px-4 py-2 text-sm"
+              onClick={() => startWhatsapp.mutate()}
+              disabled={startWhatsapp.isPending}
+            >
+              {startWhatsapp.isPending ? 'Génération du QR...' : 'Générer le code QR'}
+            </button>
+          </div>
+
           {qrData?.qr ? (
-            <img alt="QR WhatsApp" src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(qrData.qr)}`} />
+            <div className="space-y-3">
+              <img alt="QR WhatsApp" src={`https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(qrData.qr)}`} />
+              <p className="text-sm text-emerald-300">Scannez ce code depuis WhatsApp &gt; Appareils connectés &gt; Connecter un appareil.</p>
+            </div>
           ) : (
-            <p className="text-sm text-slate-400">QR indisponible pour le moment.</p>
+            <p className="text-sm text-slate-300">Aucun QR actif. Cliquez sur <b>Générer le code QR</b> pour connecter le numéro (ex: 65349292).</p>
           )}
         </section>
 

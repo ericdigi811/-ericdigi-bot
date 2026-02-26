@@ -34,7 +34,22 @@ export function useWhatsappQr() {
       if (!res.ok) throw new Error('Failed qr');
       return res.json();
     },
-    refetchInterval: 30000,
+    refetchInterval: 5000,
+  });
+}
+
+export function useStartWhatsappConnection() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const res = await fetch('/api/whatsapp/connect', { method: 'POST' });
+      if (!res.ok) throw new Error('Impossible de lancer la connexion WhatsApp');
+      return res.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/api/whatsapp/qr'] });
+      qc.invalidateQueries({ queryKey: ['/api/stats'] });
+    }
   });
 }
 

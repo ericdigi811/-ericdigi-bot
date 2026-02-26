@@ -5,7 +5,7 @@ import { api } from "../shared/routes";
 import { z } from "zod";
 import cron from "node-cron";
 import { getNewLeadsFromHubspot, notifyHubspotStatus, syncFromBitrix } from "./bitrix";
-import { getLatestQrCode, startWhatsAppBot, sendMessageToContact } from "./bot";
+import { getLatestQrCode, requestWhatsAppQr, startWhatsAppBot, sendMessageToContact } from "./bot";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -118,6 +118,11 @@ export async function registerRoutes(
 
   app.get('/api/whatsapp/qr', async (_req, res) => {
     res.json({ qr: getLatestQrCode() });
+  });
+
+  app.post('/api/whatsapp/connect', async (_req, res) => {
+    await requestWhatsAppQr();
+    res.json({ message: 'Connexion WhatsApp lancée. Scannez le QR.', qr: getLatestQrCode() });
   });
 
   app.post(api.dust.handle.path, async (req, res) => {
