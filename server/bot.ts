@@ -58,7 +58,6 @@ export async function startWhatsAppBot() {
 
   sock = makeWASocket({
     auth: state,
-    printQRInTerminal: true,
     logger: pino({ level: 'silent' }) as any,
   });
 
